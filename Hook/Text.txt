@@ -15,3 +15,39 @@
 
 ОС позволяет устанавливать (и отменять) хуки для ряда прерываний и сообщений.
 WinAPI содержит предопределенные константы для работы с наиболее популярными из них.
+
+kbHook = SetWindowsHookExW(			// дескриптор хука, нужен для его выключения
+        WH_KEYBOARD,				// тип хука - предопределенная константа
+        KbHookProc,					// адрес процедуры, которая встраивается в "петлю"
+        (HINSTANCE) NULL,			// отсчёт адреса - от текущего модуля
+        GetCurrentThreadId()		// идентификатор потока, в котором находимся
+    );
+
+UnhookWindowsHookEx(kbHook);		// выключение (отмена) хука
+
+kbHookProc:
+// замыкание петли - вызов следующего хука (предыдущий адрес)
+return CallNextHookEx(kbHook, nCode, wParam, lParam);
+
+----------
+Хуки низкого уровня (LL - LowLevel)
+
+kbLL = SetWindowsHookExW(       
+        WH_KEYBOARD_LL,             
+        KbHookProcLL,               
+        GetModuleHandle(NULL),      // получаем дескриптор модуля (DLL / EXE)
+        0);                         // главный поток
+
+Процедура для хука низкого уровня
+LRESULT CALLBACK KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam)
+if (nCode == HC_ACTION)                     //  nCode - код действия, 0 (HC_ACTION) - 
+    {                                       //
+        if (wParam == WM_KEYDOWN            //
+         || wParam == WM_SYSKEYDOWN)        //
+         {                                  //
+            KBDLLHOOKSTRUCT keyInfo =       //
+            *(                              //
+                (KBDLLHOOKSTRUCT*) lParam   //
+             );                             //
+         }                                  //
+    }                                       //

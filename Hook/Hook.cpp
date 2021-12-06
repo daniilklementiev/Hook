@@ -1,10 +1,14 @@
 // Hook.cpp : 
 #include "framework.h"
 #include "Hook.h"
+#include <fstream>
 
 #define MAX_LOADSTRING          100
 #define CMD_KB_HOOK_START       1001
-#define CMD_KB_HOOK_STOP        1002
+#define CMD_KB_HOOK_LL_START    1002
+#define CMD_KB_HOOK_LL_STOP     1003
+#define CMD_KB_HOOK_STOP        1004
+#define CMD_KB_HOOK_RESET       1005
 
 
 HINSTANCE hInst;                                
@@ -14,7 +18,9 @@ HWND list; // console
 HWND start; // console
 HWND stop; // console
 HHOOK kbHook; // hook handle for keyboard
+HHOOK kbLL; // hook handle for LL keyboard
 WCHAR txt[MAX_LOADSTRING];
+std::ofstream file("C:\\Users\\Klem_em31\\source\\repos\\Hook\\Hook\\key.txt", std::fstream::out | std::fstream::app);
 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -25,6 +31,10 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 DWORD   CALLBACK    StartKbHook(LPVOID);
 DWORD   CALLBACK    StopKbHook(LPVOID);
 LRESULT CALLBACK    KbHookProc(int, WPARAM, LPARAM);
+
+DWORD   CALLBACK    StartKbHookLL(LPVOID);
+DWORD   CALLBACK    StopKbHookLL(LPVOID);
+LRESULT CALLBACK    KbHookProcLL(int, WPARAM, LPARAM);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -111,7 +121,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CREATE: {
         start = CreateWindowW(L"Button", L"KB Start", WS_CHILD | WS_VISIBLE, 10, 10, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_START, hInst, NULL);
         stop = CreateWindowW(L"Button", L"KB Stop", WS_CHILD | WS_VISIBLE, 10, 40, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_STOP, hInst, NULL);
-        list = CreateWindowW(L"Listbox", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL, 100, 10, 200, 300, hWnd, 0, hInst, NULL);
+
+        CreateWindowW(L"Button", L"LL Start", WS_CHILD | WS_VISIBLE, 10, 100, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_LL_START, hInst, NULL);
+        CreateWindowW(L"Button", L"LL Stop", WS_CHILD | WS_VISIBLE, 10, 130, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_LL_STOP, hInst, NULL);
+
+        CreateWindowW(L"Button", L"ResetC", WS_CHILD | WS_VISIBLE, 10, 70, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_RESET, hInst, NULL);
+
+        list = CreateWindowW(L"Listbox", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL, 100, 10, 400, 300, hWnd, 0, hInst, NULL);
+        kbLL = kbHook = 0;
         break;
     }
     case WM_COMMAND:
@@ -120,14 +137,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Parse the menu selections:
             switch (wmId)
             {
-            case CMD_KB_HOOK_START:
-                SendMessageW(start, WM_KILLFOCUS, 0, 0);
-                StartKbHook(NULL);
-                break;
-            case CMD_KB_HOOK_STOP:
-                SendMessageW(stop, WM_KILLFOCUS, 0, 0);
-                StopKbHook(NULL);
-                break;
+            case CMD_KB_HOOK_RESET:     SendMessageW(list, LB_RESETCONTENT, 0, 0); break;
+
+            case CMD_KB_HOOK_START:     StartKbHook(NULL);   break;
+            case CMD_KB_HOOK_STOP:      StopKbHook(NULL);    break;
+            case CMD_KB_HOOK_LL_START:  StartKbHookLL(NULL); break;
+            case CMD_KB_HOOK_LL_STOP:   StopKbHookLL(NULL);  break;
+            
             case IDM_ABOUT:
                 DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
                 break;
@@ -177,18 +193,114 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 }
 
 DWORD CALLBACK StartKbHook(LPVOID params) {
+    if (kbHook != 0) {
+        _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook works");
+    }
+    else {
+
     
-    _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook activated");
+    kbHook = SetWindowsHookExW(
+        WH_KEYBOARD,
+        KbHookProc,
+        (HINSTANCE)NULL,
+        GetCurrentThreadId()
+    );
+    if (kbHook != 0) _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook activated");
+       
+    else _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook activation fail");
+    }
     SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
     return 0;
 }
 
 DWORD CALLBACK StopKbHook(LPVOID params) {
-    _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook released");
-    SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
+    if (kbHook != 0)
+    {
+        UnhookWindowsHookEx(kbHook);
+        kbHook = 0;
+        _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook released");
+    }
+    else {
+        _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook is not active");
+    }
+    SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
     return 0;
 }
 
 LRESULT CALLBACK KbHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
+
+    _snwprintf_s(txt, MAX_LOADSTRING, L"wParam is %d", wParam);
+    SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
+    return CallNextHookEx(kbHook, nCode, wParam, lParam);
+}
+
+
+DWORD CALLBACK StartKbHookLL(LPVOID) {
+    if (kbLL != 0) {
+        _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL works");
+    } 
+    else {
+    kbLL = SetWindowsHookExW(
+        WH_KEYBOARD_LL,
+        KbHookProcLL,
+        GetModuleHandle(NULL),
+        0);
+    if (kbLL != 0) _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL hook activated");
+
+    else _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL hook activation fail");
+
+    
+    }
+    SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
     return 0;
+}
+
+DWORD CALLBACK StopKbHookLL(LPVOID) {
+    file.close();
+    if (kbLL != 0)
+    {
+        UnhookWindowsHookEx(kbLL);
+        kbLL = 0;
+        _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL  hook released");
+    }
+    else {
+        _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL hook is not active");
+    }
+    SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
+    return 0;
+}
+LRESULT CALLBACK KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam) {
+    
+    if (!file.is_open())
+    {
+        SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)L"Error");
+    }
+    
+    if (nCode == HC_ACTION)
+    {
+        if (wParam == WM_KEYDOWN 
+         || wParam == WM_SYSKEYDOWN) {
+            KBDLLHOOKSTRUCT keyInfo = *((KBDLLHOOKSTRUCT*)lParam);
+            UINT sym = MapVirtualKeyExW(keyInfo.vkCode, MAPVK_VK_TO_CHAR,
+                GetKeyboardLayout(0));
+
+            _snwprintf_s(txt, MAX_LOADSTRING,
+                L"wParam is %d (%d) %c",
+                keyInfo.vkCode,
+                keyInfo.scanCode,
+                sym
+            );
+            if (sym == 0)
+            {
+                file << keyInfo.vkCode;
+            }
+            else {
+                file << (char)sym;
+            }
+            SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
+            
+        }
+    }
+
+    return CallNextHookEx(kbLL, nCode, wParam, lParam);
 }
