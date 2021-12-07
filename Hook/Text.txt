@@ -40,14 +40,29 @@ kbLL = SetWindowsHookExW(
 
 Процедура для хука низкого уровня
 LRESULT CALLBACK KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam)
-if (nCode == HC_ACTION)                     //  nCode - код действия, 0 (HC_ACTION) - 
+if (nCode == HC_ACTION)                     //  nCode - код действия, 0 (HC_ACTION) - обычное сообщение с удалением из очереди сообщений 
     {                                       //
-        if (wParam == WM_KEYDOWN            //
+        if (wParam == WM_KEYDOWN            // wParam - код сообщения - в данном условии это WM_KEYDOWN или WM_SYSKEYDOWN 
          || wParam == WM_SYSKEYDOWN)        //
          {                                  //
             KBDLLHOOKSTRUCT keyInfo =       //
             *(                              //
-                (KBDLLHOOKSTRUCT*) lParam   //
+                (KBDLLHOOKSTRUCT*) lParam   // в lParam передается адрес структуры с данными об этом сообщении, извлекаем эти данные, разыменовывая адрес с приведением типа
              );                             //
          }                                  //
     }                                       //
+
+-------------------------------------
+Мышь
+Из документации:
+typedef struct tagMOUSEHOOKSTRUCT {
+  POINT     pt;
+  HWND      hwnd;
+  UINT      wHitTestCode;
+  ULONG_PTR dwExtraInfo;
+} MOUSEHOOKSTRUCT, *LPMOUSEHOOKSTRUCT, *PMOUSEHOOKSTRUCT;
+
+typedef struct tagPOINT {
+    LONG x;
+    LONG y;
+} POINT, *PPOINT

@@ -9,6 +9,8 @@
 #define CMD_KB_HOOK_LL_STOP     1003
 #define CMD_KB_HOOK_STOP        1004
 #define CMD_KB_HOOK_RESET       1005
+#define CMD_MS_HOOK_START       1006
+#define CMD_MS_HOOK_STOP        1007
 
 
 HINSTANCE hInst;                                
@@ -19,6 +21,7 @@ HWND start; // console
 HWND stop; // console
 HHOOK kbHook; // hook handle for keyboard
 HHOOK kbLL; // hook handle for LL keyboard
+HHOOK msLL; // hook handle for LL mouse
 WCHAR txt[MAX_LOADSTRING];
 std::ofstream file("C:\\Users\\Klem_em31\\source\\repos\\Hook\\Hook\\key.txt", std::fstream::out | std::fstream::app);
 
@@ -35,6 +38,10 @@ LRESULT CALLBACK    KbHookProc(int, WPARAM, LPARAM);
 DWORD   CALLBACK    StartKbHookLL(LPVOID);
 DWORD   CALLBACK    StopKbHookLL(LPVOID);
 LRESULT CALLBACK    KbHookProcLL(int, WPARAM, LPARAM);
+
+DWORD   CALLBACK    StartHookMS(LPVOID);
+DWORD   CALLBACK    StopHookMS(LPVOID);
+LRESULT CALLBACK    MsHookProc(int, WPARAM, LPARAM);
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_opt_ HINSTANCE hPrevInstance,
@@ -125,10 +132,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         CreateWindowW(L"Button", L"LL Start", WS_CHILD | WS_VISIBLE, 10, 100, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_LL_START, hInst, NULL);
         CreateWindowW(L"Button", L"LL Stop", WS_CHILD | WS_VISIBLE, 10, 130, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_LL_STOP, hInst, NULL);
 
+        CreateWindowW(L"Button", L"MS Start", WS_CHILD | WS_VISIBLE, 10, 160, 75, 23, hWnd, (HMENU)CMD_MS_HOOK_START, hInst, NULL);
+        CreateWindowW(L"Button", L"MS Stop", WS_CHILD | WS_VISIBLE, 10, 190, 75, 23, hWnd, (HMENU)CMD_MS_HOOK_STOP, hInst, NULL);
+
         CreateWindowW(L"Button", L"ResetC", WS_CHILD | WS_VISIBLE, 10, 70, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_RESET, hInst, NULL);
 
         list = CreateWindowW(L"Listbox", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL, 100, 10, 400, 300, hWnd, 0, hInst, NULL);
-        kbLL = kbHook = 0;
+        kbLL = kbHook = msLL = 0;
         break;
     }
     case WM_COMMAND:
@@ -138,11 +148,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             switch (wmId)
             {
             case CMD_KB_HOOK_RESET:     SendMessageW(list, LB_RESETCONTENT, 0, 0); break;
-
+            
             case CMD_KB_HOOK_START:     StartKbHook(NULL);   break;
             case CMD_KB_HOOK_STOP:      StopKbHook(NULL);    break;
             case CMD_KB_HOOK_LL_START:  StartKbHookLL(NULL); break;
             case CMD_KB_HOOK_LL_STOP:   StopKbHookLL(NULL);  break;
+            case CMD_MS_HOOK_START:   StartHookMS(NULL);  break;
+            case CMD_MS_HOOK_STOP:   StopHookMS(NULL);  break;
+
             
             case IDM_ABOUT:
                 DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
@@ -235,6 +248,7 @@ LRESULT CALLBACK KbHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
 }
 
 
+
 DWORD CALLBACK StartKbHookLL(LPVOID) {
     if (kbLL != 0) {
         _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL works");
@@ -269,6 +283,7 @@ DWORD CALLBACK StopKbHookLL(LPVOID) {
     SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
     return 0;
 }
+
 LRESULT CALLBACK KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam) {
     
     if (!file.is_open())
@@ -301,6 +316,54 @@ LRESULT CALLBACK KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam) {
             
         }
     }
-
     return CallNextHookEx(kbLL, nCode, wParam, lParam);
+}
+
+
+
+DWORD   CALLBACK    StartHookMS(LPVOID params) {
+    if (msLL != 0) {
+        _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL works");
+    }
+    else {
+        msLL = SetWindowsHookExW(
+            WH_MOUSE_LL,
+            MsHookProc,
+            GetModuleHandle(NULL),
+            0);
+        if (msLL != 0) _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL hook activated");
+
+        else _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL hook activation fail");
+
+
+    }
+    SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
+    return 0;
+}
+
+DWORD   CALLBACK    StopHookMS(LPVOID params) {
+    if (msLL != 0)
+    {
+        UnhookWindowsHookEx(kbLL);
+        msLL = 0;
+        _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL  hook released");
+    }
+    else {
+        _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL hook is not active");
+    }
+    SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
+    return 0;
+}
+
+LRESULT CALLBACK    MsHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode == HC_ACTION)
+    {
+        if (wParam == WM_LBUTTONDOWN) {
+            MOUSEHOOKSTRUCT msInfo = *((MOUSEHOOKSTRUCT*)lParam);
+            _snwprintf_s(txt, MAX_LOADSTRING, L"%d %d", msInfo.pt.x, msInfo.pt.y);
+
+            SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
+        }
+    }
+    return CallNextHookEx(msLL, nCode, wParam, lParam);
 }
