@@ -16,6 +16,8 @@
 #define MS_OFFSET_Y             5
 #define MS_SCALE_X              5
 #define MS_SCALE_Y              5
+#define MS_CLICK_SIZE           6
+
 
 
 HINSTANCE hInst;                                
@@ -379,12 +381,14 @@ LRESULT CALLBACK    MsHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
         switch (wParam) {
         case WM_LBUTTONDOWN: {
             _snwprintf_s(txt, MAX_LOADSTRING, L"%d %d", msInfo.pt.x, msInfo.pt.y);
-            Ellipse(dc, MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X, MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y, MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X + 4, MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y + 4);
+            Ellipse(dc, 
+                MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X - MS_CLICK_SIZE / 2, 
+                MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y - MS_CLICK_SIZE / 2,
+                MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X + MS_CLICK_SIZE / 2, 
+                MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y + MS_CLICK_SIZE / 2);
             break;
         }
         case WM_MOUSEMOVE: {
-            _snwprintf_s(txt, MAX_LOADSTRING, L"%d %d", msInfo.pt.x, msInfo.pt.y);
-            prevPoint = msInfo.pt;
             if (firstMove)
             {
                 
@@ -395,7 +399,21 @@ LRESULT CALLBACK    MsHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
             else {
                 LineTo(dc, MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X, MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y);
             }
+            if (wParam == WM_LBUTTONDOWN)
+            {
+                HPEN pen = CreatePen(PS_SOLID, 5, RGB(0, 0, 0));
+                SelectObject(dc, pen);
+                LineTo(dc, MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X, MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y);
+            }
            
+            break;
+        }
+        case WM_RBUTTONDOWN: {
+            Rectangle(dc,
+                MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X - MS_CLICK_SIZE / 2,
+                MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y - MS_CLICK_SIZE / 2,
+                MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X + MS_CLICK_SIZE / 2,
+                MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y + MS_CLICK_SIZE / 2);
             break;
         }
 
