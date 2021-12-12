@@ -1,48 +1,70 @@
-// Hook.cpp : 
+// Hooks.cpp : Defines the entry point for the application.
+//
+
 #include "framework.h"
 #include "Hook.h"
-#include <fstream>
+#include <stdio.h>
+#include <wingdi.h>
+#include <windowsx.h>
 
-#define MAX_LOADSTRING          100
-#define CMD_KB_HOOK_START       1001
-#define CMD_KB_HOOK_LL_START    1002
-#define CMD_KB_HOOK_LL_STOP     1003
-#define CMD_KB_HOOK_STOP        1004
-#define CMD_KB_HOOK_RESET       1005
-#define CMD_MS_HOOK_START       1006
-#define CMD_MS_HOOK_STOP        1007
+#define MAX_LOADSTRING			100
+#define CMD_KB_HOOK_START		1001
+#define CMD_KB_HOOK_STOP		1002
+#define CMD_KB_LL_START			1003
+#define CMD_KB_LL_STOP			1004
+#define CMD_MS_LL_START			1005
+#define CMD_MS_LL_STOP			1006
 
-#define MS_OFFSET_X             5
-#define MS_OFFSET_Y             5
-#define MS_SCALE_X              5
-#define MS_SCALE_Y              5
-#define MS_CLICK_SIZE           6
+#define MS_OFFSET_X 5
+#define MS_OFFSET_Y 5
+
+#define MS_SCALE_X 5
+#define MS_SCALE_Y 5
 
 
-void saveToFile(char* buff);
-HINSTANCE hInst;                                
-WCHAR szTitle[MAX_LOADSTRING];                  
-WCHAR szWindowClass[MAX_LOADSTRING];            
-HWND list; // console
-HWND start; // console
-HWND msTrace; // console
-HWND stop; // console
-HHOOK kbHook; // hook handle for keyboard
-HHOOK kbLL; // hook handle for LL keyboard
-HHOOK msLL; // hook handle for LL mouse
-WCHAR txt[MAX_LOADSTRING];
+
+
+// Global Variables:
+HINSTANCE hInst;                                // current instance
+WCHAR szTitle[MAX_LOADSTRING];                  // The title bar text
+WCHAR szWindowClass[MAX_LOADSTRING];            // the main window class name
+
+HWND listbox;
+
+HHOOK kbHOOK;
+HHOOK kbLL;
+HHOOK msLL;
+
 HDC dc;
-BOOL firstMove;
-POINT prevPoint;
-HPEN pen = CreatePen(PS_SOLID, 3, RGB(100, 200, 0));
-FILE* file;
+HDC memoryDC;
+
+HBITMAP memoryPictureTrace;
+
+
+HDC msDc;
+HDC MSmemoryDC; //DC for memory copy of picture
+
+HBITMAP memoryPicture;
+
+
+HWND msTrace;
+HWND save;
+
+HPEN msPen;
+
+FILE* f;
+
+
 int buffCount = 0;
 
+
+wchar_t str[MAX_LOADSTRING];
+
+// Forward declarations of functions included in this code module:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
-
 
 DWORD   CALLBACK    StartKbHook(LPVOID);
 DWORD   CALLBACK    StopKbHook(LPVOID);
@@ -52,384 +74,564 @@ DWORD   CALLBACK    StartKbHookLL(LPVOID);
 DWORD   CALLBACK    StopKbHookLL(LPVOID);
 LRESULT CALLBACK    KbHookProcLL(int, WPARAM, LPARAM);
 
-DWORD   CALLBACK    StartHookMS(LPVOID);
-DWORD   CALLBACK    StopHookMS(LPVOID);
-LRESULT CALLBACK    MsHookProc(int, WPARAM, LPARAM);
+DWORD   CALLBACK    StartMsHookLL(LPVOID);
+DWORD   CALLBACK    StopMsHookLL(LPVOID);
+LRESULT CALLBACK    MsHookProcLL(int, WPARAM, LPARAM);
+
+
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
+	_In_opt_ HINSTANCE hPrevInstance,
+	_In_ LPWSTR    lpCmdLine,
+	_In_ int       nCmdShow)
 {
-    UNREFERENCED_PARAMETER(hPrevInstance);
-    UNREFERENCED_PARAMETER(lpCmdLine);
+	UNREFERENCED_PARAMETER(hPrevInstance);
+	UNREFERENCED_PARAMETER(lpCmdLine);
 
-    // TODO: Place code here.
+	// TODO: Place code here.
 
+	// Initialize global strings
+	buffCount = 0;
+	LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
+	LoadStringW(hInstance, IDC_HOOK, szWindowClass, MAX_LOADSTRING);
+	MyRegisterClass(hInstance);
 
-    LoadStringW(hInstance, IDS_APP_TITLE, szTitle, MAX_LOADSTRING);
-    LoadStringW(hInstance, IDC_HOOK, szWindowClass, MAX_LOADSTRING);
-    MyRegisterClass(hInstance);
+	// Perform application initialization:
+	if (!InitInstance(hInstance, nCmdShow))
+	{
+		return FALSE;
+	}
 
+	HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_HOOK));
 
-    if (!InitInstance (hInstance, nCmdShow))
-    {
-        return FALSE;
-    }
+	MSG msg;
 
-    HACCEL hAccelTable = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDC_HOOK));
+	// Main message loop:
+	while (GetMessage(&msg, nullptr, 0, 0))
+	{
+		if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
+	}
 
-    MSG msg;
-
-
-    while (GetMessage(&msg, nullptr, 0, 0))
-    {
-        if (!TranslateAccelerator(msg.hwnd, hAccelTable, &msg))
-        {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
-
-    return (int) msg.wParam;
+	return (int)msg.wParam;
 }
 
+
+
+//
+//  FUNCTION: MyRegisterClass()
+//
+//  PURPOSE: Registers the window class.
+//
 ATOM MyRegisterClass(HINSTANCE hInstance)
 {
-    WNDCLASSEXW wcex;
+	WNDCLASSEXW wcex;
 
-    wcex.cbSize = sizeof(WNDCLASSEX);
+	wcex.cbSize = sizeof(WNDCLASSEX);
 
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_HOOK));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+2);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_HOOK);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+	wcex.style = CS_HREDRAW | CS_VREDRAW;
+	wcex.lpfnWndProc = WndProc;
+	wcex.cbClsExtra = 0;
+	wcex.cbWndExtra = 0;
+	wcex.hInstance = hInstance;
+	wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_HOOK));
+	wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+	wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+	wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_HOOK);
+	wcex.lpszClassName = szWindowClass;
+	wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
-    return RegisterClassExW(&wcex);
+	return RegisterClassExW(&wcex);
 }
+
 
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-   hInst = hInstance; // Store instance handle in our global variable
+	hInst = hInstance; // Store instance handle in our global variable
 
-   HWND hWnd = CreateWindowExW(WS_EX_TOPMOST, szWindowClass, szTitle, WS_OVERLAPPEDWINDOW & ~(WS_THICKFRAME | WS_MAXIMIZEBOX ),
-      50, 50, 750, 310, nullptr, nullptr, hInstance, nullptr);
+	HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW & ~(WS_THICKFRAME | WS_MAXIMIZEBOX),
+		CW_USEDEFAULT, 0, 1300, 600, nullptr, nullptr, hInstance, nullptr);
 
-   if (!hWnd)
-   {
-      return FALSE;
-   }
+	if (!hWnd)
+	{
+		return FALSE;
+	}
 
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
+	ShowWindow(hWnd, nCmdShow);
+	UpdateWindow(hWnd);
 
-   return TRUE;
+
+
+	return TRUE;
 }
-
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    switch (message)
-    {
-    case WM_CREATE: {
-        start = CreateWindowW(L"Button", L"KB Start", WS_CHILD | WS_VISIBLE, 10, 10, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_START, hInst, NULL);
-        stop = CreateWindowW(L"Button", L"KB Stop", WS_CHILD | WS_VISIBLE, 10, 40, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_STOP, hInst, NULL);
+	switch (message)
+	{
 
-        CreateWindowW(L"Button", L"LL Start", WS_CHILD | WS_VISIBLE, 10, 100, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_LL_START, hInst, NULL);
-        CreateWindowW(L"Button", L"LL Stop", WS_CHILD | WS_VISIBLE, 10, 130, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_LL_STOP, hInst, NULL);
+	case WM_CREATE: {
 
-        CreateWindowW(L"Button", L"MS Start", WS_CHILD | WS_VISIBLE, 10, 160, 75, 23, hWnd, (HMENU)CMD_MS_HOOK_START, hInst, NULL);
-        CreateWindowW(L"Button", L"MS Stop", WS_CHILD | WS_VISIBLE, 10, 190, 75, 23, hWnd, (HMENU)CMD_MS_HOOK_STOP, hInst, NULL);
+		msPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
 
-        CreateWindowW(L"Button", L"ResetC", WS_CHILD | WS_VISIBLE, 10, 70, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_RESET, hInst, NULL);
-        msTrace = CreateWindowW(L"Static", L"", WS_CHILD | WS_VISIBLE , 330, 10, 394, 226, hWnd, 0, hInst, 0);
-        dc = GetDC(msTrace);
-        list = CreateWindowW(L"Listbox", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL, 100, 10, 200, 226, hWnd, 0, hInst, NULL);
-        kbLL = kbHook = msLL = 0;
-        break;
-    }
-    case WM_COMMAND:
-        {
-            int wmId = LOWORD(wParam);
-            // Parse the menu selections:
-            switch (wmId)
-            {
-            case CMD_KB_HOOK_RESET:     SendMessageW(list, LB_RESETCONTENT, 0, 0); break;
-            
-            case CMD_KB_HOOK_START:     StartKbHook(NULL);   break;
-            case CMD_KB_HOOK_STOP:      StopKbHook(NULL);    break;
-            case CMD_KB_HOOK_LL_START:  StartKbHookLL(NULL); break;
-            case CMD_KB_HOOK_LL_STOP:   StopKbHookLL(NULL);  break;
-            case CMD_MS_HOOK_START:   StartHookMS(NULL);  break;
-            case CMD_MS_HOOK_STOP:   StopHookMS(NULL);  break;
+		listbox = CreateWindowW(L"Listbox", L"", WS_VISIBLE | WS_CHILD | WS_BORDER | WS_VSCROLL, 100, 10, 500, 500, hWnd, NULL, hInst, NULL);
+		CreateWindowW(L"Button", L"Start", WS_VISIBLE | WS_CHILD, 10, 10, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_START, hInst, NULL);
+		CreateWindowW(L"Button", L"Stop", WS_VISIBLE | WS_CHILD, 10, 40, 75, 23, hWnd, (HMENU)CMD_KB_HOOK_STOP, hInst, NULL);
 
-            
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
-            }
-        }
-        break;
-    case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            // TODO: Add any drawing code that uses hdc here...
-            EndPaint(hWnd, &ps);
-        }
-        break;
-    case WM_DESTROY:
-        ReleaseDC(hWnd, dc);
-        PostQuitMessage(0);
-        break;
-    default:
-        return DefWindowProc(hWnd, message, wParam, lParam);
-    }
-    return 0;
+		CreateWindowW(L"Button", L"Start KB LL", WS_VISIBLE | WS_CHILD, 10, 70, 75, 23, hWnd, (HMENU)CMD_KB_LL_START, hInst, NULL);
+		CreateWindowW(L"Button", L"Stop KB LL", WS_VISIBLE | WS_CHILD, 10, 100, 75, 23, hWnd, (HMENU)CMD_KB_LL_STOP, hInst, NULL);
+
+		CreateWindowW(L"Button", L"Start MS LL", WS_VISIBLE | WS_CHILD, 10, 130, 75, 23, hWnd, (HMENU)CMD_MS_LL_START, hInst, NULL);
+		CreateWindowW(L"Button", L"Stop MS LL", WS_VISIBLE | WS_CHILD, 10, 160, 75, 23, hWnd, (HMENU)CMD_MS_LL_STOP, hInst, NULL);
+
+
+
+		msTrace = CreateWindowW(L"Static", L"", WS_VISIBLE | WS_CHILD | SS_ETCHEDFRAME, 800, 250, 192 * 2, 108 * 2, hWnd, NULL, hInst, NULL);
+
+
+		dc = GetDC(msTrace);
+		memoryDC = CreateCompatibleDC(dc);
+
+		RECT traceRect;
+		GetClientRect(msTrace, &traceRect);
+
+		memoryPictureTrace = CreateCompatibleBitmap(memoryDC, traceRect.right - traceRect.left, traceRect.bottom - traceRect.top);
+		SelectObject(memoryDC, memoryPictureTrace);
+
+		HBRUSH bgTrace = CreateSolidBrush(GetBkColor(dc));
+		FillRect(memoryDC, &traceRect, bgTrace);
+
+
+		msDc = GetDC(hWnd);
+		MSmemoryDC = CreateCompatibleDC(msDc);
+		RECT rect;
+		GetClientRect(hWnd, &rect);
+
+		memoryPicture = CreateCompatibleBitmap(MSmemoryDC, rect.right - rect.left, rect.bottom - rect.top);
+
+
+		SelectObject(MSmemoryDC, memoryPicture);
+
+		HBRUSH bg = CreateSolidBrush(GetBkColor(msDc));
+		FillRect(MSmemoryDC, &rect, bg);
+
+
+		break;
+
+	}
+	case WM_COMMAND:
+	{
+		int wmId = LOWORD(wParam);
+		// Parse the menu selections:
+		switch (wmId)
+		{
+		case CMD_KB_HOOK_START:
+			StartKbHook(NULL);
+			break;
+
+		case CMD_KB_HOOK_STOP:
+			StopKbHook(NULL);
+
+			break;
+
+		case CMD_KB_LL_START:
+			StartKbHookLL(NULL);
+			break;
+		case CMD_KB_LL_STOP:
+			StopKbHookLL(NULL);
+			break;
+
+		case CMD_MS_LL_START:
+			StartMsHookLL(NULL);
+			break;
+		case CMD_MS_LL_STOP:
+			StopMsHookLL(NULL);
+			break;
+
+			break;
+
+		case IDM_ABOUT:
+			DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+			break;
+		case IDM_EXIT:
+			DestroyWindow(hWnd);
+			break;
+		default:
+			return DefWindowProc(hWnd, message, wParam, lParam);
+		}
+	}
+	break;
+	case WM_PAINT:
+	{
+		PAINTSTRUCT ps;
+		HDC hdc = BeginPaint(hWnd, &ps);
+		// TODO: Add any drawing code that uses hdc here...
+
+		RECT r;
+		GetClientRect(hWnd, &r);
+		BitBlt(
+			hdc,                // destination DC
+			0, 0,            // start point
+			r.right - r.left,  // width
+			r.bottom - r.top,  // height
+			MSmemoryDC,          // source DC
+			0, 0,              // start point (in source)
+			SRCCOPY            // copy mode
+		);
+
+
+		PAINTSTRUCT tracePs;
+		HDC tracehdc = BeginPaint(msTrace, &tracePs);
+		RECT traceR;
+		GetClientRect(msTrace, &traceR);
+
+		BitBlt(tracehdc, 0, 0, traceR.right - traceR.left, traceR.bottom - traceR.top, memoryDC, 0, 0, SRCCOPY);
+
+		EndPaint(msTrace, &tracePs);
+		EndPaint(hWnd, &ps);
+
+	}
+	break;
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		ReleaseDC(hWnd, dc);
+		ReleaseDC(hWnd, msDc);
+		break;
+	default:
+		return DefWindowProc(hWnd, message, wParam, lParam);
+	}
+	return 0;
 }
 
-
+// Message handler for about box.
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    UNREFERENCED_PARAMETER(lParam);
-    switch (message)
-    {
-    case WM_INITDIALOG:
-        return (INT_PTR)TRUE;
+	UNREFERENCED_PARAMETER(lParam);
+	switch (message)
+	{
+	case WM_INITDIALOG:
+		return (INT_PTR)TRUE;
 
-    case WM_COMMAND:
-        if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
-        {
-            EndDialog(hDlg, LOWORD(wParam));
-            return (INT_PTR)TRUE;
-        }
-        break;
-    }
-    return (INT_PTR)FALSE;
-}
-
-DWORD CALLBACK StartKbHook(LPVOID params) {
-    if (kbHook != 0) {
-        _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook works");
-    }
-    else {
-
-    
-    kbHook = SetWindowsHookExW(
-        WH_KEYBOARD,
-        KbHookProc,
-        (HINSTANCE)NULL,
-        GetCurrentThreadId()
-    );
-    if (kbHook != 0) _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook activated");
-       
-    else _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook activation fail");
-    }
-    SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
-    return 0;
-}
-
-DWORD CALLBACK StopKbHook(LPVOID params) {
-    if (kbHook != 0)
-    {
-        UnhookWindowsHookEx(kbHook);
-        kbHook = 0;
-        _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook released");
-    }
-    else {
-        _snwprintf_s(txt, MAX_LOADSTRING, L"KB hook is not active");
-    }
-    SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
-    return 0;
-}
-
-LRESULT CALLBACK KbHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
-
-    _snwprintf_s(txt, MAX_LOADSTRING, L"wParam is %d", wParam);
-    SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
-    return CallNextHookEx(kbHook, nCode, wParam, lParam);
-}
-
-/***************************************************************************************************/
-
-DWORD CALLBACK StartKbHookLL(LPVOID) {
-    if (kbLL != 0) {
-        _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL works");
-    } 
-    else {
-    kbLL = SetWindowsHookExW(
-        WH_KEYBOARD_LL,
-        KbHookProcLL,
-        GetModuleHandle(NULL),
-        0);
-    if (kbLL != 0) _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL hook activated");
-
-    else _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL hook activation fail");
-
-    
-    }
-    SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
-    return 0;
-}
-
-DWORD CALLBACK StopKbHookLL(LPVOID) {
-    if (kbLL != 0)
-    {
-        UnhookWindowsHookEx(kbLL);
-        kbLL = 0;
-        _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL  hook released");
-    }
-    else {
-        _snwprintf_s(txt, MAX_LOADSTRING, L"KB LL hook is not active");
-    }
-    SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
-    return 0;
+	case WM_COMMAND:
+		if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
+		{
+			EndDialog(hDlg, LOWORD(wParam));
+			return (INT_PTR)TRUE;
+		}
+		break;
+	}
+	return (INT_PTR)FALSE;
 }
 
 
-void saveToFile(char* buff) 
-{
-    file = fopen("klogger.txt", "at");
-    fputs(buff, file);
-    fclose(file);
+
+
+DWORD   CALLBACK    StartKbHook(LPVOID params) {
+
+
+	kbHOOK = SetWindowsHookExW(WH_KEYBOARD, KbHookProc, (HINSTANCE)NULL, GetCurrentThreadId());
+
+	if (kbHOOK) {
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"hook started");
+
+	}
+	else {
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"hook start failed");
+
+
+	}
+	SendMessageW(listbox, LB_ADDSTRING, 0, (LPARAM)str);
+
+
+	return 0;
+}
+
+DWORD   CALLBACK    StopKbHook(LPVOID params) {
+
+
+	if (kbHOOK) {
+
+		UnhookWindowsHookEx(kbHOOK);
+		_snwprintf_s(str, MAX_LOADSTRING, L"hook stopped");
+		kbHOOK = NULL;
+	}
+	else {
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"hook stop failed");
+
+	}
+
+	SendMessageW(listbox, LB_ADDSTRING, 0, (LPARAM)str);
+
+
+
+	return 0;
+}
+
+LRESULT CALLBACK    KbHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
+
+	_snwprintf_s(str, MAX_LOADSTRING, L"%d %d", wParam, lParam);
+
+	SendMessageW(listbox, LB_ADDSTRING, 0, (LPARAM)str);
+
+
+	return CallNextHookEx(kbHOOK, nCode, wParam, lParam);
+
+}
+
+
+
+DWORD   CALLBACK    StartKbHookLL(LPVOID params) {
+
+
+	if (kbLL) {
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"LL hook works");
+
+	}
+	else {
+		kbLL = SetWindowsHookExW(WH_KEYBOARD_LL, KbHookProcLL, GetModuleHandle(NULL), 0);
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"LL hook started");
+
+
+	}
+	SendMessageW(listbox, LB_ADDSTRING, 0, (LPARAM)str);
+
+	return 0;
+}
+
+DWORD   CALLBACK    StopKbHookLL(LPVOID params) {
+	PROCESS_INFORMATION pInfo;
+	STARTUPINFO sInfo;
+
+
+	ZeroMemory(&pInfo, sizeof(PROCESS_INFORMATION));
+	ZeroMemory(&sInfo, sizeof(STARTUPINFO));
+
+	if (kbLL) {
+
+		UnhookWindowsHookEx(kbLL);
+		kbLL = NULL;
+		_snwprintf_s(str, MAX_LOADSTRING, L"LL hook stopped");
+	}
+	else {
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"LL hook stop failed");
+
+	}
+
+	SendMessageW(listbox, LB_ADDSTRING, 0, (LPARAM)str);
+
+
+
+	return 0;
+}
+
+void saveToFile(char* buff) {
+
+
+	f = fopen("file.txt", "at");
+	fputs(buff, f);
+	fclose(f);
+
 
 }
 
 char text[100];
 
-LRESULT CALLBACK KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK    KbHookProcLL(int nCode, WPARAM wParam, LPARAM lParam) {
 
-    
-    if (nCode == HC_ACTION)
-    {
-        if (wParam == WM_KEYDOWN 
-         || wParam == WM_SYSKEYDOWN) {
-            KBDLLHOOKSTRUCT keyInfo = *((KBDLLHOOKSTRUCT*)lParam);
-            UINT sym = MapVirtualKeyExW(keyInfo.vkCode, MAPVK_VK_TO_CHAR,
-                GetKeyboardLayout(0));
-            _snwprintf_s(txt, MAX_LOADSTRING,
-                L"wParam is %d (%d) %c",
-                keyInfo.vkCode,
-                keyInfo.scanCode,
-                sym
-            );
+	if (nCode == HC_ACTION) {
 
-            text[buffCount] = (char)keyInfo.vkCode;
-            buffCount++;
+		if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+
+			KBDLLHOOKSTRUCT keyInfo = *((KBDLLHOOKSTRUCT*)lParam);
+
+			_snwprintf_s(str, MAX_LOADSTRING, L"%c %d %d", (char)keyInfo.vkCode, keyInfo.vkCode, buffCount);
+			SendMessageW(listbox, LB_ADDSTRING, 0, (LPARAM)str);
+
+			text[buffCount] = (char)keyInfo.vkCode;
+			buffCount++;
 
 
-            if (buffCount >= 100) {
-                saveToFile(text);
-                strcpy(text, "");
-                buffCount = 0;
-            }
-      
-            
-            SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
-            
-        }
-    }
-    return CallNextHookEx(kbLL, nCode, wParam, lParam);
+			if (buffCount >= 100) {
+				saveToFile(text);
+				strcpy(text, "");
+				buffCount = 0;
+			}
+
+
+
+		}
+
+	}
+
+	return CallNextHookEx(kbLL, nCode, wParam, lParam);
 }
 
-/***************************************************************************************************/
-
-DWORD   CALLBACK    StartHookMS(LPVOID params) {
-    
-    if (msLL != 0) {
-        _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL works");
-    }
-    else {
-        msLL = SetWindowsHookExW(
-            WH_MOUSE_LL,
-            MsHookProc,
-            GetModuleHandle(NULL),
-            0);
-        if (msLL != 0) { 
-            firstMove = TRUE; 
-            _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL hook activated"); 
-        }
-
-        else _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL hook activation fail");
 
 
-    }
-    SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
-    return 0;
+DWORD   CALLBACK    StartMsHookLL(LPVOID param) {
+
+
+	if (msLL) {
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"msLL hook works");
+
+	}
+	else {
+		msLL = SetWindowsHookExW(WH_MOUSE_LL, MsHookProcLL, GetModuleHandle(NULL), 0);
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"msLL hook started");
+
+
+	}
+	SendMessageW(listbox, LB_ADDSTRING, 0, (LPARAM)str);
+
+	return 0;
 }
 
-DWORD   CALLBACK    StopHookMS(LPVOID params) {
-    if (msLL != 0)
-    {
-        UnhookWindowsHookEx(msLL);
-        msLL = 0;
-        _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL  hook released");
-    }
-    else {
-        _snwprintf_s(txt, MAX_LOADSTRING, L"MS LL hook is not active");
-    }
-    SendMessageW(list, LB_ADDSTRING, MAX_LOADSTRING, (LPARAM)txt);
-    return 0;
+DWORD   CALLBACK    StopMsHookLL(LPVOID param) {
+
+
+	PROCESS_INFORMATION pInfo;
+	STARTUPINFO sInfo;
+
+
+	ZeroMemory(&pInfo, sizeof(PROCESS_INFORMATION));
+	ZeroMemory(&sInfo, sizeof(STARTUPINFO));
+
+	if (msLL) {
+
+		UnhookWindowsHookEx(msLL);
+		_snwprintf_s(str, MAX_LOADSTRING, L"msLL hook stopped");
+		
+		msLL = NULL;
+	}
+	else {
+
+		_snwprintf_s(str, MAX_LOADSTRING, L"msll hook stop failed");
+
+	}
+
+	SendMessageW(listbox, LB_ADDSTRING, 0, (LPARAM)str);
+
+
+
+
+	return 0;
 }
 
-LRESULT CALLBACK    MsHookProc(int nCode, WPARAM wParam, LPARAM lParam) {
+bool posInit = false;
 
-    if (nCode == HC_ACTION)
-    {
-        MOUSEHOOKSTRUCT msInfo = *((MOUSEHOOKSTRUCT*)lParam);
-        switch (wParam) {
-        case WM_LBUTTONDOWN: {
-            _snwprintf_s(txt, MAX_LOADSTRING, L"%d %d", msInfo.pt.x, msInfo.pt.y);
-            Ellipse(dc, 
-                MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X - MS_CLICK_SIZE / 2, 
-                MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y - MS_CLICK_SIZE / 2,
-                MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X + MS_CLICK_SIZE / 2, 
-                MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y + MS_CLICK_SIZE / 2);
-            break;
-        }
-        case WM_MOUSEMOVE: {
-            if (firstMove)
-            {
-                
-                MoveToEx(dc, MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X, MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y, NULL);
-                firstMove = FALSE;
+bool lclk = false;
 
-            }
-            else {
-                LineTo(dc, MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X, MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y);
-            }
-            if (wParam == WM_LBUTTONDOWN)
-            {
-                HPEN pen = CreatePen(PS_SOLID, 5, RGB(0, 0, 0));
-                SelectObject(dc, pen);
-                LineTo(dc, MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X, MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y);
-            }
-           
-            break;
-        }
-        case WM_RBUTTONDOWN: {
-            Rectangle(dc,
-                MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X - MS_CLICK_SIZE / 2,
-                MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y - MS_CLICK_SIZE / 2,
-                MS_OFFSET_X + msInfo.pt.x / MS_SCALE_X + MS_CLICK_SIZE / 2,
-                MS_OFFSET_Y + msInfo.pt.y / MS_SCALE_Y + MS_CLICK_SIZE / 2);
-            break;
-        }
+LRESULT CALLBACK    MsHookProcLL(int nCode, WPARAM wParam, LPARAM lParam) {
 
-        }
-        SendMessageW(list, LB_ADDSTRING, 0, (LPARAM)txt);
-    }
-    return CallNextHookEx(msLL, nCode, wParam, lParam);
+	if (nCode == HC_ACTION) {
+
+		MOUSEHOOKSTRUCT mouseInfo = *((MOUSEHOOKSTRUCT*)lParam);
+		HPEN savedPen = (HPEN)SelectObject(msDc, msPen);
+		HPEN savedPenTrace = (HPEN)SelectObject(dc, msPen);
+
+		if (wParam == WM_MOUSEMOVE) {
+			if (!posInit) {
+
+				MoveToEx(dc, mouseInfo.pt.x / 5, mouseInfo.pt.y / 5, NULL);
+				posInit = true;
+			}
+			if (lclk) {
+				DeletePen(msPen);
+				msPen = CreatePen(PS_SOLID, 10, RGB(255, 0, 0));
+				SelectObject(dc, msPen);
+				LineTo(dc, mouseInfo.pt.x / 5, mouseInfo.pt.y / 5);
+				SelectObject(msDc, savedPenTrace);
+				savedPenTrace = (HPEN)SelectObject(memoryDC, msPen);
+				LineTo(memoryDC, mouseInfo.pt.x / 5, mouseInfo.pt.y / 5);
+				msPen = CreatePen(PS_SOLID, 2, RGB(255, 0, 0));
+			}
+			else {
+
+				SelectObject(dc, msPen);
+				LineTo(dc, mouseInfo.pt.x / 5, mouseInfo.pt.y / 5);
+				SelectObject(msDc, savedPenTrace);
+				savedPenTrace = (HPEN)SelectObject(memoryDC, msPen);
+				LineTo(memoryDC, mouseInfo.pt.x / 5, mouseInfo.pt.y / 5);
+
+			}
+
+
+			SetPixel(msDc, (mouseInfo.pt.x / 5) + 800, mouseInfo.pt.y / 5, RGB(255, 0, 0));
+			SetPixel(msDc, (mouseInfo.pt.x / 5) + 801, mouseInfo.pt.y / 5, RGB(255, 0, 0));
+			SetPixel(msDc, (mouseInfo.pt.x / 5) + 800, mouseInfo.pt.y / 5 + 1, RGB(255, 0, 0));
+			SetPixel(msDc, (mouseInfo.pt.x / 5) + 801, mouseInfo.pt.y / 5 + 1, RGB(255, 0, 0));
+			SelectObject(msDc, savedPen);
+
+			savedPen = (HPEN)SelectObject(MSmemoryDC, msPen);
+			SetPixel(MSmemoryDC, (mouseInfo.pt.x / 5) + 800, mouseInfo.pt.y / 5, RGB(255, 0, 0));
+			SetPixel(MSmemoryDC, (mouseInfo.pt.x / 5) + 801, mouseInfo.pt.y / 5, RGB(255, 0, 0));
+			SetPixel(MSmemoryDC, (mouseInfo.pt.x / 5) + 800, mouseInfo.pt.y / 5 + 1, RGB(255, 0, 0));
+			SetPixel(MSmemoryDC, (mouseInfo.pt.x / 5) + 801, mouseInfo.pt.y / 5 + 1, RGB(255, 0, 0));
+
+
+
+
+
+
+		}
+		if (wParam == WM_LBUTTONDOWN) {
+
+			Ellipse(dc, mouseInfo.pt.x / MS_SCALE_X - 4, mouseInfo.pt.y / MS_SCALE_Y - 2, mouseInfo.pt.x / MS_SCALE_X + 4, mouseInfo.pt.y / 5 + MS_SCALE_Y + 2);
+			savedPenTrace = (HPEN)SelectObject(memoryDC, msPen);
+			Ellipse(memoryDC, mouseInfo.pt.x / MS_SCALE_X - 4, mouseInfo.pt.y / MS_SCALE_Y - 2, mouseInfo.pt.x / MS_SCALE_X + 4, mouseInfo.pt.y / 5 + MS_SCALE_Y + 2);
+
+			lclk = true;
+
+		}
+		if (wParam == WM_LBUTTONUP) {
+
+
+			lclk = false;
+
+
+		}
+		if (wParam == WM_RBUTTONDOWN) {
+
+			Rectangle(dc, mouseInfo.pt.x / MS_SCALE_X - 4, mouseInfo.pt.y / MS_SCALE_Y - 2, mouseInfo.pt.x / MS_SCALE_X + 4, mouseInfo.pt.y / 5 + MS_SCALE_Y + 2);
+			savedPenTrace = (HPEN)SelectObject(memoryDC, msPen);
+			Rectangle(memoryDC, mouseInfo.pt.x / MS_SCALE_X - 4, mouseInfo.pt.y / MS_SCALE_Y - 2, mouseInfo.pt.x / MS_SCALE_X + 4, mouseInfo.pt.y / 5 + MS_SCALE_Y + 2);
+
+		}
+
+		if (wParam == WM_MOUSEWHEEL) {
+
+
+			MSLLHOOKSTRUCT msLLinfo = *((MSLLHOOKSTRUCT*)lParam);
+
+			if (((short)HIWORD(msLLinfo.mouseData)) == 120) {
+
+				AngleArc(dc, mouseInfo.pt.x / MS_SCALE_X, mouseInfo.pt.y / MS_SCALE_Y, 10, 0, 180);
+				savedPenTrace = (HPEN)SelectObject(memoryDC, msPen);
+				AngleArc(memoryDC, mouseInfo.pt.x / MS_SCALE_X, mouseInfo.pt.y / MS_SCALE_Y, 10, 0, 180);
+			}
+			else
+			{
+				AngleArc(dc, mouseInfo.pt.x / MS_SCALE_X, mouseInfo.pt.y / MS_SCALE_Y, 10, 0, -180);
+				savedPenTrace = (HPEN)SelectObject(memoryDC, msPen);
+				AngleArc(memoryDC, mouseInfo.pt.x / MS_SCALE_X, mouseInfo.pt.y / MS_SCALE_Y, 10, 0, -180);
+
+			}
+
+		}
+
+
+	}
+
+	return CallNextHookEx(msLL, nCode, wParam, lParam);
 }
